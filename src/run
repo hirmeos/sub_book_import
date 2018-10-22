@@ -1,0 +1,133 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Take a CSV file containing a mapping of custom IDs nad DOIs and submit new findings to the identifier translation service.
+
+usage: python run
+
+(c) Javier Arias, Open Book Publishers, October 2018
+Use of this software is governed by the terms of the MIT license
+
+Dependencies:
+  httplib2==0.10.3
+  urllib3==1.20
+"""
+
+import os
+import sys
+import csv
+import json
+import urllib2
+import httplib2
+
+PID_URI_SCHEME = os.environ['PID_URI_SCHEME']
+PID_URI_PREFIX = os.environ['PID_URI_PREFIX']
+DOI_URI_SCHEME = os.environ['DOI_URI_SCHEME']
+DOI_URI_PREFIX = os.environ['DOI_URI_PREFIX']
+CSV_LOC_URL    = os.environ['CSV_LOC_URL']
+CSV_PID_COL    = int(os.environ['CSV_PID_COL'])
+CSV_DOI_COL    = int(os.environ['CSV_DOI_COL'])
+URI_API_ENDP   = os.environ['URI_API_ENDP']
+URI_API_USER   = os.environ['URI_API_USER']
+URI_API_PASS   = os.environ['URI_API_PASS']
+AUTH_API_ENDP  = os.environ['AUTH_API_ENDP']
+URI_API_URIS   = os.environ['URI_API_URIS']
+
+def get_token(url, email, passwd):
+    h = httplib2.Http()
+    credentials = {'email': email, 'password': passwd}
+    headers = {'content-type': 'application/json'}
+    res, content = h.request(url, 'POST', json.dumps(credentials), headers)
+    try:
+        assert res.status == 200
+    except AssertionError:
+        raise ValueError(content)
+    return json.loads(content)['data'][0]['token']
+
+def get_from_doi(doi):
+    url = URI_API_ENDP + "?uri=" + doi
+    h = httplib2.Http()
+    res, content = h.request(url, 'GET',
+        headers={'Authorization': 'Bearer ' + API_JWTOKEN})
+
+    try:
+        assert res.status == 200
+    except AssertionError:
+        sys.stderr.write(content)
+        exit(1)
+
+    return json.loads(content)['data']
+
+def submit_uri(url, uuid, uri):
+    h = httplib2.Http()
+    new_uri = {'UUID': uuid, 'URI': uri}
+    headers = {'content-type': 'application/json',
+               'Authorization': 'Bearer ' + API_JWTOKEN}
+    res, content = h.request(url, 'POST', json.dumps(new_uri), headers)
+    try:
+        assert res.status == 200
+    except AssertionError:
+        sys.stderr.write(content)
+        sys.exit(1)
+
+def get_uuid_from_uris(uris):
+    uuid = ''
+    for uri in uris:
+        assert uuid == '' or uuid == uri['work']['UUID']
+        uuid = uri['work']['UUID']
+    return uuid
+
+def get_pid_from_uris(uris):
+    uuid = ''
+    for uri in uris:
+        if uri['URI_parts']['scheme'] == PID_URI_PREFIX:
+            return uri['URI']
+    return ''
+
+def get_csv():
+    return urllib2.urlopen(CSV_LOC_URL)
+
+def standarise_pid(product_id):
+    return PID_URI_SCHEME + PID_URI_PREFIX + product_id
+
+def standarise_doi(doi):
+    return DOI_URI_SCHEME + DOI_URI_PREFIX + doi.lower()
+
+def process_csv(mapping_file):
+    buff    = csv.reader(mapping_file)
+    for row in buff:
+       pid = row[CSV_PID_COL]
+       doi = row[CSV_DOI_COL]
+       try:
+          assert pid and doi
+       except AssertionError:
+          continue
+
+       uri_pid = standarise_pid(pid)
+       uri_doi = standarise_doi(doi)
+
+       try:
+          uris = get_from_doi(uri_doi)
+          uuid = get_uuid_from_uris(uris)
+          assert uris and uuid
+       except AssertionError:
+          sys.stderr.write('UUID not found for ' + uri_doi + '\n')
+          sys.exit(1)
+
+       stored_pid = get_pid_from_uris(uris)
+       try:
+          assert stored_pid == ''
+       except AssertionError:
+          continue
+       submit_uri(URI_API_URIS, uuid, uri_pid)
+
+def run():
+    assert API_JWTOKEN
+    mapping_file = get_csv()
+    assert mapping_file
+    process_csv(mapping_file)
+
+API_JWTOKEN = get_token(AUTH_API_ENDP, URI_API_USER, URI_API_PASS)
+
+if __name__ == '__main__':
+    run()

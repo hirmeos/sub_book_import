@@ -24,6 +24,7 @@ CSV_LOC_URL       = os.environ['CSV_LOC_URL']
 CSV_TITLE_COL     = int(os.environ['CSV_TITLE_COL'])
 CSV_DOI_COL       = int(os.environ['CSV_DOI_COL'])
 CSV_URI_START_COL = int(os.environ['CSV_URI_START_COL'])
+CSV_CANONICAL_END = int(os.environ['CSV_CANONICAL_END'])
 DEFAULT_TYPE      = os.environ['DEFAULT_TYPE']
 URI_API_ENDP      = os.environ['URI_API_ENDP']
 URI_API_USER      = os.environ['URI_API_USER']
@@ -75,11 +76,17 @@ def get_uri_from_uris(uri, uris):
             return e['URI']
     return ''
 
-def standarise_uri(uri):
-    return {'URI': uri}
+def standarise_uri(uri, canonical):
+    return {'URI': uri, 'canonical': canonical}
 
 def standarise_uris(uris):
-    return [standarise_uri(e) for e in uris]
+    out = []
+    for i, val in enumerate(uris):
+        # canonicalise all columns from CSV_URI_START_COL to CSV_CANONICAL_END
+        # (inclusive). If yoy dont' want canonicals, set CSV_CANONICAL_END=-1
+        canonical = "true" if i < CSV_CANONICAL_END else "false"
+        out.append(standarise_uri(val, canonical))
+    return out
 
 def get_csv():
     return urllib2.urlopen(CSV_LOC_URL)
@@ -112,7 +119,8 @@ def process_csv(mapping_file):
               assert candidate == ''
           except AssertionError:
               continue
-          new_uri = {'UUID': uuid, 'URI': uri['URI']}
+          new_uri = {'UUID': uuid, 'URI': uri['URI'],
+                     'canonical': uri['canonical']}
           submit(URI_API_URIS, new_uri)
 
 def run():

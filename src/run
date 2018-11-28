@@ -32,6 +32,7 @@ URI_API_PASS      = os.environ['URI_API_PASS']
 AUTH_API_ENDP     = os.environ['AUTH_API_ENDP']
 URI_API_WORKS     = os.environ['URI_API_WORKS']
 URI_API_URIS      = os.environ['URI_API_URIS']
+URI_API_TITLES    = os.environ['URI_API_TITLES']
 
 def get_token(url, email, passwd):
     h = httplib2.Http()
@@ -122,6 +123,9 @@ def process_csv(mapping_file):
           new_uri = {'UUID': uuid, 'URI': uri['URI'],
                      'canonical': uri['canonical']}
           submit(URI_API_URIS, new_uri)
+       # now submit the input title in case it's been updated
+       submit(URI_API_TITLES, {'UUID': uuid, 'title': title})
+
 
 def run():
     assert API_JWTOKEN

@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Take a CSV file containing title and URIs associated to a DOI and submit new findings to the identifier translation service.
+Take a CSV file containing title and URIs associated to a DOI and submit new
+findings to the identifier translation service.
 
 usage: python run
 
@@ -34,6 +35,7 @@ URI_API_WORKS     = os.environ['URI_API_WORKS']
 URI_API_URIS      = os.environ['URI_API_URIS']
 URI_API_TITLES    = os.environ['URI_API_TITLES']
 
+
 def get_token(url, email, passwd):
     h = httplib2.Http()
     credentials = {'email': email, 'password': passwd}
@@ -45,13 +47,14 @@ def get_token(url, email, passwd):
         raise ValueError(content)
     return json.loads(content)['data'][0]['token']
 
+
 def get_from_doi(doi):
     url = URI_API_ENDP + "?uri=" + doi
     h = httplib2.Http()
-    res, content = h.request(url, 'GET',
-        headers={'Authorization': 'Bearer ' + API_JWTOKEN})
-
+    headers = {'Authorization': 'Bearer ' + API_JWTOKEN}
+    res, content = h.request(url, 'GET', headers=headers)
     return json.loads(content)['data']
+
 
 def submit(url, data):
     h = httplib2.Http()
@@ -64,6 +67,7 @@ def submit(url, data):
         sys.stderr.write(content)
         sys.exit(1)
 
+
 def get_uuid_from_uris(uris):
     uuid = ''
     for uri in uris:
@@ -71,14 +75,17 @@ def get_uuid_from_uris(uris):
         uuid = uri['work']['UUID']
     return uuid
 
+
 def get_uri_from_uris(uri, uris):
     for e in uris:
         if e['URI'] == uri:
             return e['URI']
     return ''
 
+
 def standarise_uri(uri, canonical):
     return {'URI': uri, 'canonical': canonical}
+
 
 def standarise_uris(uris):
     out = []
@@ -89,42 +96,44 @@ def standarise_uris(uris):
         out.append(standarise_uri(val, canonical))
     return out
 
+
 def get_csv():
     return urllib2.urlopen(CSV_LOC_URL)
 
+
 def process_csv(mapping_file):
-    buff    = csv.reader(mapping_file)
+    buff = csv.reader(mapping_file)
     for row in buff:
-       title = row[CSV_TITLE_COL]
-       doi = row[CSV_DOI_COL]
-       input_uris = standarise_uris(row[CSV_URI_START_COL:])
-       try:
-          assert title and doi
-       except AssertionError:
-          continue
+        title = row[CSV_TITLE_COL]
+        doi = row[CSV_DOI_COL]
+        input_uris = standarise_uris(row[CSV_URI_START_COL:])
+        try:
+            assert title and doi
+        except AssertionError:
+            continue
 
-       try:
-          uris = get_from_doi(doi)
-          uuid = get_uuid_from_uris(uris)
-          assert uris and uuid
-       except AssertionError:
-          # add new work
-          work = {'title': [title], 'type': DEFAULT_TYPE, 'URI': input_uris}
-          submit(URI_API_WORKS, work)
-          continue
+        try:
+            uris = get_from_doi(doi)
+            uuid = get_uuid_from_uris(uris)
+            assert uris and uuid
+        except AssertionError:
+            # add new work
+            work = {'title': [title], 'type': DEFAULT_TYPE, 'URI': input_uris}
+            submit(URI_API_WORKS, work)
+            continue
 
-       # insert input URIs if not already in database
-       for uri in input_uris:
-          candidate = get_uri_from_uris(uri['URI'], uris)
-          try:
-              assert candidate == ''
-          except AssertionError:
-              continue
-          new_uri = {'UUID': uuid, 'URI': uri['URI'],
-                     'canonical': uri['canonical']}
-          submit(URI_API_URIS, new_uri)
-       # now submit the input title in case it's been updated
-       submit(URI_API_TITLES, {'UUID': uuid, 'title': title})
+        # insert input URIs if not already in database
+        for uri in input_uris:
+            candidate = get_uri_from_uris(uri['URI'], uris)
+            try:
+                assert candidate == ''
+            except AssertionError:
+                continue
+            new_uri = {'UUID': uuid, 'URI': uri['URI'],
+                       'canonical': uri['canonical']}
+            submit(URI_API_URIS, new_uri)
+        # now submit the input title in case it's been updated
+        submit(URI_API_TITLES, {'UUID': uuid, 'title': title})
 
 
 def run():
@@ -133,7 +142,9 @@ def run():
     assert mapping_file
     process_csv(mapping_file)
 
+
 API_JWTOKEN = get_token(AUTH_API_ENDP, URI_API_USER, URI_API_PASS)
+
 
 if __name__ == '__main__':
     run()

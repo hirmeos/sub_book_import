@@ -63,7 +63,7 @@ def is_doi_unique(doi):
     headers = {'Authorization': 'Bearer ' + API_JWTOKEN}
     res, content = h.request(url, 'GET', headers=headers)
     try:
-        assert res.status == 200
+        assert json.loads(content)['count'] >= 0
     except AssertionError:
         r = json.loads(content)
         m = "%s: %s" % (r['message'], r['parameters']['uri'])

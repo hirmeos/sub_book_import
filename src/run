@@ -56,6 +56,22 @@ def get_from_doi(doi):
     return json.loads(content)['data']
 
 
+def is_doi_unique(doi):
+    url = '%s?uri=%s&filter=uri_scheme:info:doi&strict=true' % (URI_API_ENDP,
+                                                                doi)
+    h = httplib2.Http()
+    headers = {'Authorization': 'Bearer ' + API_JWTOKEN}
+    res, content = h.request(url, 'GET', headers=headers)
+    try:
+        assert res.status == 200
+    except AssertionError:
+        r = json.loads(content)
+        m = "%s: %s" % (r['message'], r['parameters']['uri'])
+        print >>sys.stderr, m
+        return False
+    return True
+
+
 def submit(url, data):
     h = httplib2.Http()
     headers = {'content-type': 'application/json',
@@ -107,8 +123,11 @@ def process_csv(mapping_file):
         title = row[CSV_TITLE_COL]
         doi = row[CSV_DOI_COL]
         input_uris = standarise_uris(row[CSV_URI_START_COL:])
+
         try:
             assert title and doi
+            # make sure this doi corresponds to a single work
+            assert is_doi_unique(doi)
         except AssertionError:
             continue
 

@@ -67,8 +67,9 @@ def is_doi_unique(doi):
     except AssertionError:
         r = json.loads(content)
         m = "%s: %s" % (r['message'], r['parameters']['uri'])
-        print >>sys.stderr, m
-        return False
+        if r['message'] != 'No records have matched your search criteria.':
+            print >>sys.stderr, m
+            return False
     return True
 
 

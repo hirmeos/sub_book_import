@@ -63,12 +63,13 @@ def is_doi_unique(doi):
     headers = {'Authorization': 'Bearer ' + API_JWTOKEN}
     res, content = h.request(url, 'GET', headers=headers)
     try:
-        assert json.loads(content)['count'] <= 1
+        assert res.status == 200
     except AssertionError:
         r = json.loads(content)
         m = "%s: %s" % (r['message'], r['parameters']['uri'])
-        print >>sys.stderr, m
-        return False
+        if r['message'] != 'No records have matched your search criteria.':
+            print >>sys.stderr, m
+            return False
     return True
 
 

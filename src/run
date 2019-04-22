@@ -11,21 +11,17 @@ Use of this software is governed by the terms of the MIT license
 
 Dependencies:
   httplib2==0.10.3
-  urllib3==1.20
+  pandas==0.23.4
 """
 
 import os
 import sys
-import csv
 import json
-import urllib2
 import httplib2
+import pandas as pd
+from urlparse import urlparse
 
-CSV_LOC_URL       = os.environ['CSV_LOC_URL']
-CSV_TITLE_COL     = int(os.environ['CSV_TITLE_COL'])
-CSV_DOI_COL       = int(os.environ['CSV_DOI_COL'])
-CSV_URI_START_COL = int(os.environ['CSV_URI_START_COL'])
-CSV_CANONICAL_END = int(os.environ['CSV_CANONICAL_END'])
+CSV_PATH          = os.environ['CSV_PATH']
 DEFAULT_TYPE      = os.environ['DEFAULT_TYPE']
 URI_API_ENDP      = os.environ['URI_API_ENDP']
 URI_API_USER      = os.environ['URI_API_USER']
@@ -104,31 +100,96 @@ def standarise_uri(uri, canonical):
     return {'URI': uri, 'canonical': canonical}
 
 
-def standarise_uris(uris):
+def standarise_uris(uris, is_canonical):
     out = []
-    for i, val in enumerate(uris):
-        # canonicalise all columns from CSV_URI_START_COL to CSV_CANONICAL_END
-        # (inclusive). If yoy dont' want canonicals, set CSV_CANONICAL_END=-1
-        canonical = "true" if i < CSV_CANONICAL_END else "false"
-        out.append(standarise_uri(val, canonical))
+    for val in uris:
+        out.append(standarise_uri(val, is_canonical))
     return out
 
 
-def get_csv():
-    return urllib2.urlopen(CSV_LOC_URL)
+def preprocess_csv(mapping_file):
+    df = pd.read_csv(mapping_file, encoding="utf-8", header=0, sep='|')
+    df_new = pd.DataFrame()
+
+    df_new['Title short'] = df['Title']
+    df_new['ISBN-10'] = ['urn:isbn:' + str(x).strip(' ') if not x == '  ' else x for x in df['ISBN-10']]
+    df_new['ISBN-13'] = ['urn:isbn:' + str(x).strip(' ') if not x == '  ' else x for x in df['ISBN-13']]
+    df_new['DOI'] = ['info:doi:' + str(x).strip(' ') if not x == ' ' else x for x in df['DOI']]
+
+    # URL different versions
+    df_new['URL'] = [str(x).strip(' ') for x in df['URL']]
+    df_new['alt URL'] = [str(x).strip(' ') for x in df['MORE URL']]
+
+    df_new['URL www'] = [str(x).replace('https://', 'https://www.') for x in df_new['URL']]
+    df_new['alt URL www'] = [str(x).replace('https://', 'https://www.') for x in df_new['alt URL']]
+
+    df_new['URL http'] = [str(x).strip(' ').replace('https', 'http') for x in df_new['URL']]
+    df_new['alt URL http'] = [str(x).strip(' ').replace('https', 'http') for x in df_new['alt URL']]
+
+    df_new['URL http www'] = [str(x).strip(' ').replace('https://', 'http://www.') for x in df_new['URL']]
+    df_new['alt URL http www'] = [str(x).strip(' ').replace('https://', 'http://www.') for x in df_new['alt URL']]
+
+    # pdfview different versions
+    df_new['pdfview'] = [str(x).strip(' ') for x in df['PDFVIEW']]
+    df_new['alt pdfview'] = [str(x).strip(' ') for x in df['MORE PDFVIEW']]
+
+    df_new['pdfview www'] = [str(x).replace('https://', 'https://www.') for x in df_new['pdfview']]
+    df_new['alt pdfview www'] = [str(x).replace('https://', 'https://www.') for x in df_new['alt pdfview']]
+
+    df_new['pdfview http'] = [str(x).strip(' ').replace('https', 'http') for x in df_new['pdfview']]
+    df_new['alt pdfview http'] = [str(x).strip(' ').replace('https', 'http') for x in df_new['alt pdfview']]
+
+    df_new['pdfview http www'] = [str(x).strip(' ').replace('https://', 'http://www.') for x in df_new['pdfview']]
+    df_new['alt pdfview http www'] = [str(x).strip(' ').replace('https://', 'http://www.') for x in df_new['alt pdfview']]
+
+    # hypothesis different versions, standard including https://www.
+    df_new['hypothesis www'] = [str(x).strip(' ') for x in df['HYPOTHES.IS']]
+    df_new['alt hypothesis www'] = [str(x).strip(' ') for x in df['HYPOTHES.IS']]
+
+    df_new['hypothesis'] = [str(x).replace('https://wwww.', 'https://') for x in df_new['hypothesis www']]
+    df_new['alt hypothesis'] = [str(x).replace('https://www.', 'https://') for x in df_new['alt hypothesis www']]
+
+    df_new['hypothesis http'] = [str(x).strip(' ').replace('https://www.', 'http://') for x in df_new['hypothesis www']]
+    df_new['alt hypothesis http'] = [str(x).strip(' ').replace('https://www.', 'http://') for x in df_new['alt hypothesis www']]
+
+    df_new['hypothesis http www'] = [str(x).strip(' ').replace('https', 'http') for x in df_new['hypothesis www']]
+    df_new['alt hypothesis http www'] = [str(x).strip(' ').replace('https', 'http') for x in df_new['alt hypothesis www']]
+
+    df_new['URN'] = [str(x).strip(' ') for x in df['URN']]
+
+    return df_new
+
+
+def is_uri(uri):
+    return isinstance(uri, str) and bool(urlparse(uri).scheme)
 
 
 def process_csv(mapping_file):
-    buff = csv.reader(mapping_file)
-    for row in buff:
-        title = row[CSV_TITLE_COL]
-        doi = row[CSV_DOI_COL]
-        input_uris = standarise_uris(row[CSV_URI_START_COL:])
+    df = preprocess_csv(mapping_file)
+
+    for row in df.index:
+        title = df.at[row, 'Title short']
+
+        doi = df.at[row, 'DOI']
+        # isbn_10 = df.at[row, 'ISBN-10']
+        # isbn_13 = df.at[row, 'ISBN-13']
+
+        uris = []
+        # for x in [df.at[row, 'URL'], df.at[row, 'alt URL'], df.at[row, 'URN'], isbn_10, isbn_13]:
+        for col in df.columns:
+            if not col == 'Title short' or not col == "DOI":
+                x = df.at[row, col]
+            if is_uri(x):
+                uris.append(x)
+
+        input_uris = standarise_uris(uris, False)
+        input_uris.append(standarise_uri(doi, True))
 
         try:
-            assert title and doi
-            # make sure this doi corresponds to a single work
-            assert is_doi_unique(doi)
+            if not title or not is_uri(doi):
+                raise AssertionError
+            if not is_doi_unique(doi):
+                raise AssertionError
         except AssertionError:
             continue
 
@@ -158,9 +219,7 @@ def process_csv(mapping_file):
 
 def run():
     assert API_JWTOKEN
-    mapping_file = get_csv()
-    assert mapping_file
-    process_csv(mapping_file)
+    process_csv(CSV_PATH)
 
 
 API_JWTOKEN = get_token(AUTH_API_ENDP, URI_API_USER, URI_API_PASS)

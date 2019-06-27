@@ -157,6 +157,10 @@ def preprocess_csv(mapping_file):
 
     df_new['URN'] = [str(x).strip(' ') for x in df['URN']]
 
+    #make landing page links 
+    df_new['url landing page'] = ['https://univerlag.uni-goettingen.de/handle/3/isbn-'str(x).strip(' ') for x in df['ISBN-13']]
+
+
     return df_new
 
 
